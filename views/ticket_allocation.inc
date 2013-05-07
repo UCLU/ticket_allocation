@@ -12,6 +12,7 @@ $view->disabled = FALSE; /* Edit this to true to make a default view disabled in
 /* Display: Master */
 $handler = $view->new_display('default', 'Master', 'default');
 $handler->display->display_options['use_more_always'] = FALSE;
+$handler->display->display_options['group_by'] = TRUE;
 $handler->display->display_options['access']['type'] = 'none';
 $handler->display->display_options['cache']['type'] = 'none';
 $handler->display->display_options['query']['type'] = 'views_query';
@@ -31,6 +32,8 @@ $handler->display->display_options['style_options']['columns'] = array(
   'mail' => 'mail',
   'commerce_product' => 'commerce_product',
   'quantity' => 'quantity',
+  'ticket' => 'ticket',
+  'ticket_allocation_link' => 'ticket_allocation_link',
 );
 $handler->display->display_options['style_options']['default'] = 'created';
 $handler->display->display_options['style_options']['info'] = array(
@@ -72,6 +75,16 @@ $handler->display->display_options['style_options']['info'] = array(
   'quantity' => array(
     'sortable' => 1,
     'default_sort_order' => 'asc',
+    'align' => '',
+    'separator' => '',
+    'empty_column' => 0,
+  ),
+  'ticket' => array(
+    'align' => '',
+    'separator' => '',
+    'empty_column' => 1,
+  ),
+  'ticket_allocation_link' => array(
     'align' => '',
     'separator' => '',
     'empty_column' => 0,
@@ -127,7 +140,7 @@ $handler->display->display_options['fields']['commerce_product']['id'] = 'commer
 $handler->display->display_options['fields']['commerce_product']['table'] = 'field_data_commerce_product';
 $handler->display->display_options['fields']['commerce_product']['field'] = 'commerce_product';
 $handler->display->display_options['fields']['commerce_product']['relationship'] = 'commerce_line_items_line_item_id';
-$handler->display->display_options['fields']['commerce_product']['type'] = 'commerce_product_reference_title_link';
+$handler->display->display_options['fields']['commerce_product']['type'] = 'commerce_product_reference_title_plain';
 $handler->display->display_options['fields']['commerce_product']['settings'] = array(
   'show_quantity' => 0,
   'default_quantity' => '1',
@@ -141,11 +154,17 @@ $handler->display->display_options['fields']['quantity']['table'] = 'commerce_li
 $handler->display->display_options['fields']['quantity']['field'] = 'quantity';
 $handler->display->display_options['fields']['quantity']['relationship'] = 'commerce_line_items_line_item_id';
 $handler->display->display_options['fields']['quantity']['precision'] = '0';
+/* Field: MIN(Ticket allocation: Ticket number) */
+$handler->display->display_options['fields']['ticket']['id'] = 'ticket';
+$handler->display->display_options['fields']['ticket']['table'] = 'ticket_allocation';
+$handler->display->display_options['fields']['ticket']['field'] = 'ticket';
+$handler->display->display_options['fields']['ticket']['group_type'] = 'min';
+$handler->display->display_options['fields']['ticket']['label'] = 'Ticket number (sample)';
 /* Field: Commerce Order: Ticket allocation link */
 $handler->display->display_options['fields']['ticket_allocation_link']['id'] = 'ticket_allocation_link';
 $handler->display->display_options['fields']['ticket_allocation_link']['table'] = 'commerce_order';
 $handler->display->display_options['fields']['ticket_allocation_link']['field'] = 'ticket_allocation_link';
-$handler->display->display_options['fields']['ticket_allocation_link']['label'] = '';
+$handler->display->display_options['fields']['ticket_allocation_link']['label'] = 'Actions';
 $handler->display->display_options['fields']['ticket_allocation_link']['element_label_colon'] = FALSE;
 /* Sort criterion: Commerce Order: Created date */
 $handler->display->display_options['sorts']['created']['id'] = 'created';
