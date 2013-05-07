@@ -1,0 +1,435 @@
+<?php
+/**
+ * @file
+ * Main module file for Ticket Allocation.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function ticket_allocation_menu() {
+  $items['admin/commerce/ticket-allocation'] = array(
+    'title' => 'Ticket allocation',
+    'description' => 'Allocate physical tickets for store purchases.',
+    'page callback' => 'ticket_allocation_page',
+    'access arguments' => array('use ticket allocation'),
+  );
+  $items['admin/commerce/ticket-allocation/%commerce_order'] = array(
+    'title callback' => 'ticket_allocation_title',
+    'title arguments' => array(3),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ticket_allocation_form', 3),
+    'access arguments' => array('use ticket allocation'),
+  );
+  $items['admin/commerce/config/ticket-allocation'] = array(
+    'title' => 'Ticket allocation settings',
+    'description' => 'Configure the allocation of physical tickets.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ticket_allocation_config'),
+    'access arguments' => array('administer ticket allocation settings'),
+  );
+  $items['ticket_allocation/autocomplete/product'] = array(
+    'title' => 'Ticket allocation autocomplete for Commerce products',
+    'page callback' => '_ticket_allocation_autocomplete_product',
+    'access arguments' => array('use ticket allocation'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
+ * Title callback for the ticket allocation form.
+ */
+function ticket_allocation_title($order) {
+  return t('Ticket allocation: order #@order', array('@order' => $order->order_number));
+}
+
+/**
+ * Form for ticket allocation.
+ */
+function ticket_allocation_form($form, &$form_state, $order) {
+  $products = _ticket_allocation_get_products_from_order($order, _ticket_allocation_get_skus());
+
+  $event_name = variable_get('ticket_allocation_event_name');
+
+  $form_state['event_name'] = $event_name;
+  $form_state['order'] = $order;
+  $form_state['products'] = $products;
+
+  $order_view = commerce_order_ui_order_view($order, 'administrator');
+  unset($order_view['commerce_order'][$order->order_id]['commerce_customer_billing']);
+  $form['order'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Order details'),
+    '#collapsible' => FALSE,
+  );
+  $form['order']['details'] = $order_view;
+  $form['tickets'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Ticket allocation'),
+    '#tree' => TRUE,
+  );
+  $allocations = ticket_allocation_load_by_order($order);
+  foreach ($products as $product_id => $product) {
+    $product_allocations = array();
+    foreach ($allocations as $allocation) {
+      if ($allocation->product_id == $product->product_id) {
+        $product_allocations[] = $allocation->ticket;
+      }
+    }
+    $element = array(
+      '#type' => 'textfield',
+      '#size' => 30,
+      '#maxlength' => 100,
+      '#element_validate' => array('ticket_allocation_form_validate_ticket'),
+      '#product_id' => $product->product_id,
+    );
+    $quantity = $product->ticket_allocation_quantity;
+    if ($quantity > 1) {
+      $original_element = $element;
+      $element = array(
+        '#type' => 'fieldset',
+        '#title' => t('Tickets for %title', array('%title' => $product->title)),
+        '#collapsible' => TRUE,
+        '#tree' => TRUE,
+      );
+      for ($i = 1; $i <= $quantity; $i++) {
+        $element[$i] = array(
+          '#title' => t('!i/!q', array('!i' => (int) $i, '!q' => (int) $quantity)),
+          '#default_value' => array_slice($product_allocations, $i - 1, 1),
+        ) + $original_element;
+      }
+    }
+    else {
+      $element['#title'] = t('Ticket for %title', array('%title' => $product->title));
+      $element['#default_value'] = implode($product_allocations);
+    }
+    $form['tickets'][$product_id] = $element;
+  }
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['save'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+  if (!empty($_GET['destination'])) {
+    $options = drupal_parse_url($_GET['destination']);
+    $cancel_path = $options['path'];
+    $cancel_options = $options;
+  }
+  else {
+    $cancel_path = 'admin/commerce/ticket-allocation';
+  }
+  $form['actions']['cancel'] = array(
+    '#type' => 'link',
+    '#title' => t('Cancel'),
+    '#href' => $cancel_path,
+    '#options' => $cancel_options,
+  );
+  return $form;
+}
+
+/**
+ * Validate a ticket number.
+ */
+function ticket_allocation_form_validate_ticket($element, &$form_state) {
+  $order = $form_state['order'];
+  $event_name = $form_state['event_name'];
+  $value = $element['#value'];
+  if (!empty($value)) {
+    $query = db_select('ticket_allocation', 'ta')
+      ->fields('ta')
+      ->condition('event_name', $event_name)
+      ->condition('order_id', $order->order_id, '<>')
+      ->condition('ticket', $value)
+      ->range(0, 1);
+    $result = $query->execute();
+    if (($allocation = $result->fetch()) !== FALSE) {
+      $order = commerce_order_load($allocation->order_id);
+      form_error($element, t('The ticket %ticket is already allocated to order @order', array(
+        '%ticket' => $value,
+        '@order' => $order->order_number,
+      )));
+    }
+  }
+}
+
+/**
+ * Submit callback for the ticket allocation form.
+ */
+function ticket_allocation_form_submit($form, &$form_state) {
+
+  global $user;
+
+  $order = $form_state['order'];
+
+  $transaction = db_transaction('ticket_allocation');
+
+  try {
+    $event_name = variable_get('ticket_allocation_event_name');
+    // Delete previous ticket allocations for this order & event.
+    db_delete('ticket_allocation')
+      ->condition('order_id', $order->order_id)
+      ->condition('event_name', $event_name)
+      ->execute();
+    // Insert ALL the ticket allocations for this order & event.
+    $insert = db_insert('ticket_allocation')
+      ->fields(array(
+        'order_id',
+        'product_id',
+        'event_name',
+        'ticket',
+        'uid',
+        'created',
+        'changed',
+      ));
+    foreach ($form_state['values']['tickets'] as $product_id => $tickets) {
+      $tickets = (array) $tickets;
+      foreach ($tickets as $ticket) {
+        if (strlen($ticket)) {
+          $insert->values(array(
+            $order->order_id,
+            $product_id,
+            $event_name,
+            $ticket,
+            $user->uid,
+            REQUEST_TIME,
+            REQUEST_TIME,
+          ));
+        }
+      }
+    }
+    $insert->execute();
+  }
+  catch (Exception $e) {
+    $transaction->rollback();
+    drupal_set_message(t('There was an error allocating ticket(s) for order @order.', array(
+      '@order' => $order->order_number,
+    )), 'error');
+    $form_state['rebuild'] = TRUE;
+    throw $e;
+    return;
+  }
+
+  drupal_set_message(t('The ticket allocation for order @order has been saved.', array(
+    '@order' => $order->order_number,
+  )));
+
+  if (!isset($_GET['destination'])) {
+    $form_state['redirect'] = 'admin/commerce/ticket-allocation';
+  }
+}
+
+/**
+ * Get the ticket allocations for the given order.
+ */
+function ticket_allocation_load_by_order($order) {
+  $tickets = &drupal_static(__FUNCTION__, array());
+  $oid = $order->order_id;
+  if (!isset($tickets[$oid])) {
+    $query = db_select('ticket_allocation', 'ta')
+      ->fields('ta')
+      ->condition('order_id', $order->order_id)
+      ->execute();
+    $tickets[$oid] = $query->fetchAll();
+  }
+  return $tickets[$oid];
+}
+
+/**
+ * Get the SKUs configured for ticket allocation.
+ *
+ * @return array
+ *   An array of product SKUs.
+ */
+function _ticket_allocation_get_skus() {
+  return explode(', ', variable_get('ticket_allocation_products'));
+}
+
+/**
+ * Get the products in a given order.
+ */
+function _ticket_allocation_get_products_from_order(stdClass $order, array $skus = array()) {
+  $products = array();
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+  // Find line items in the order.
+  foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
+    if ($line_item_wrapper->type->value() == 'product') {
+      // Get the product from the line item.
+      $product = $line_item_wrapper->commerce_product->value();
+      // Filter out products by the given SKUs.
+      if (!count($skus) || in_array($product->sku, $skus)) {
+        $product->ticket_allocation_quantity = $line_item_wrapper->quantity->value();
+        $products[$product->product_id] = $product;
+      }
+    }
+  }
+  return $products;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function ticket_allocation_permission() {
+  return array(
+    'administer ticket allocation settings' => array(
+      'title' => t('Administer ticket allocation settings'),
+      'restrict access' => TRUE,
+    ),
+    'use ticket allocation' => array(
+      'title' => t('Use ticket allocation'),
+    ),
+  );
+}
+
+/**
+ * The settings form for the module.
+ */
+function ticket_allocation_config($form, &$form_state) {
+  $form['ticket_allocation_event_name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Event name'),
+    '#default_value' => variable_get('ticket_allocation_event_name'),
+    '#required' => TRUE,
+    '#size' => 100,
+  );
+  $form['ticket_allocation_products'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Products'),
+    '#autocomplete_path' => 'ticket_allocation/autocomplete/product',
+    '#default_value' => variable_get('ticket_allocation_products'),
+    '#description' => t('Specify the product(s) relating to the event.'),
+    '#required' => TRUE,
+    '#size' => 100,
+  );
+  return system_settings_form($form);
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function ticket_allocation_views_api() {
+  return array('api' => 3);
+}
+
+/**
+ * Implements hook_views_default_views().
+ */
+function ticket_allocation_views_default_views() {
+  $views_dir = drupal_get_path('module', 'ticket_allocation') . '/views';
+  $views_files = scandir($views_dir);
+  $views = array();
+  foreach ($views_files as $filename) {
+    if (substr($filename, -4) == '.inc') {
+      include_once $views_dir . '/' . $filename;
+    }
+  }
+  return $views;
+}
+
+/**
+ * Implements hook_views_data().
+ */
+function ticket_allocation_views_data() {
+  $data['ticket_allocation'] = array();
+  $table = &$data['ticket_allocation'];
+  $table['table'] = array(
+    'group' => t('Ticket allocation'),
+    'title' => 'ticket_allocation',
+    'help' => t('The table storing data about ticket allocations.'),
+    'base' => array(
+      'field' => 'allocation_id',
+      'title' => t('Ticket allocation'),
+      'help' => t("Tickets allocated to an order/event."),
+    ),
+    'join' => array(
+      'commerce_order' => array(
+        'field' => 'order_id',
+        'left_field' => 'order_id',
+      ),
+    ),
+  );
+  $table['ticket'] = array(
+    'title' => t('Ticket number'),
+    'help' => t('A ticket number assigned to this order.'),
+    'field' => array(
+      'handler' => 'views_handler_field',
+    ),
+    'filter' => array(
+      'handler' => 'views_handler_filter_string',
+    ),
+  );
+  $table['order_id'] = array(
+    'title' => t('Order'),
+    'help' => t('The commerce order that this ticket allocation is for.'),
+    'field' => array(
+      'handler' => 'commerce_order_handler_field_order',
+    ),
+  );
+  return $data;
+}
+
+/**
+ * Implements hook_views_data_alter().
+ */
+function ticket_allocation_views_data_alter(&$data) {
+  // Make the 'Allocate ticket(s)' link available to Views of orders.
+  $data['commerce_order']['ticket_allocation_link'] = array(
+    'field' => array(
+      'title' => t('Ticket allocation link'),
+      'help' => t('Provide a link to a form where physical tickets can be allocated for this order.'),
+      'handler' => 'ticket_allocation_views_handler_field_link',
+    ),
+  );
+}
+
+/**
+ * The main page, allowing searching for orders.
+ */
+function ticket_allocation_page() {
+  $event_name = variable_get('ticket_allocation_event_name', t('Unknown event'));
+  drupal_set_title(t('Tickets for %event', array('%event' => $event_name)), PASS_THROUGH);
+  $view = views_get_view('ticket_allocation');
+  $view->override_url = 'admin/commerce/ticket-allocation';
+  $view->override_path = 'admin/commerce/ticket-allocation';
+  $view->set_display('embed');
+  $view->set_arguments(_ticket_allocation_get_skus());
+  return $view->preview();
+}
+
+/**
+ * Enables a product autocomplete for the settings form.
+ */
+function _ticket_allocation_autocomplete_product() {
+
+  $matches = array();
+
+  // Extract the SKU string from the URL while preserving support for SKUs that
+  // contain slashes.
+  // @see http://drupal.org/node/1962144
+  $args = explode('/', request_path());
+
+  if (count($args) <= 3) {
+    drupal_json_output($matches);
+  }
+
+  array_splice($args, 0, 3);
+  $string = implode('/', $args);
+
+  // The user enters a comma-separated list of tags. We only autocomplete the last tag.
+  $tags_typed = drupal_explode_tags($string);
+  $tag_last = drupal_strtolower(array_pop($tags_typed));
+
+  if (!empty($tag_last)) {
+    $prefix = count($tags_typed) ? implode(', ', $tags_typed) . ', ' : '';
+
+    // Get an array of matching products.
+    $products = _commerce_product_match_products_standard(array(), $tag_last, 'contains', array(), 10);
+
+    // Loop through the products and convert them into autocomplete output.
+    foreach ($products as $product_id => $data) {
+      $matches[$prefix . $data['sku']] = $data['rendered'];
+    }
+  }
+
+  drupal_json_output($matches);
+}

@@ -1,0 +1,81 @@
+<?php
+/**
+ * @file
+ * Install functions for Ticket Allocation.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function ticket_allocation_schema() {
+  $schema['ticket_allocation'] = array(
+    'fields' => array(
+      'allocation_id' => array(
+        'description' => 'Primary key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'order_id' => array(
+        'description' => 'Relates to {commerce_order}.order_id.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'product_id' => array(
+        'description' => 'Relates to {commerce_product}.product_id.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'event_name' => array(
+        'description' => 'The name of the event that this ticket is for.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'ticket' => array(
+        'description' => 'The unique identifier of this physical ticket.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'description' => 'The {users}.uid that created this allocation.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'created' => array(
+        'description' => 'The Unix timestamp when the allocation was created.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'changed' => array(
+        'description' => 'The Unix timestamp when the allocation was most recently saved.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('allocation_id'),
+    'indexes' => array(
+      'product_id' => array('product_id'),
+      'event_name' => array('event_name'),
+      'uid' => array('uid'),
+    ),
+    'unique keys' => array(
+      'event_ticket' => array('event_name', 'ticket'),
+    ),
+  );
+  return $schema;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function ticket_allocation_uninstall() {
+  variable_del('ticket_allocation_event_name');
+  variable_del('ticket_allocation_products');
+}

@@ -1,0 +1,9 @@
+name = Ticket allocation.
+description = Allows physical tickets to be allocated to orders for Commerce product purchases.
+core = 7.x
+dependencies[] = views
+dependencies[] = commerce
+dependencies[] = commerce_order
+dependencies[] = commerce_order_ui
+dependencies[] = commerce_product
+files[] = views/handlers/ticket_allocation_views_handler_field_link.inc
