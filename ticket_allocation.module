@@ -90,12 +90,11 @@ function ticket_allocation_form($form, &$form_state, $order) {
       $element = array(
         '#type' => 'fieldset',
         '#title' => t('Tickets for %title', array('%title' => $product->title)),
-        '#collapsible' => TRUE,
         '#tree' => TRUE,
       );
       for ($i = 1; $i <= $quantity; $i++) {
         $element[$i] = array(
-          '#title' => t('!i/!q', array('!i' => (int) $i, '!q' => (int) $quantity)),
+          '#title' => t('Ticket !i/!q', array('!i' => (int) $i, '!q' => (int) $quantity)),
           '#default_value' => array_slice($product_allocations, $i - 1, 1),
         ) + $original_element;
       }
