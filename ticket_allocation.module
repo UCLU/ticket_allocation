@@ -151,6 +151,9 @@ function ticket_allocation_form_validate_ticket($element, &$form_state) {
         '@url' => url('admin/commerce/ticket-allocation/' . $order->order_id),
       )));
     }
+    elseif (!is_numeric($value)) {
+      form_error($element, t('Ticket numbers must be numeric.'));
+    }
   }
 }
 
