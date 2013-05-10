@@ -117,6 +117,7 @@ function ticket_allocation_form($form, &$form_state, $order) {
   }
   else {
     $cancel_path = 'admin/commerce/ticket-allocation';
+    $cancel_options = array();
   }
   $form['actions']['cancel'] = array(
     '#type' => 'link',
