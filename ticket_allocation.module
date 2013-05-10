@@ -396,7 +396,8 @@ function ticket_allocation_page() {
   $view->override_url = 'admin/commerce/ticket-allocation';
   $view->override_path = 'admin/commerce/ticket-allocation';
   $view->set_display('embed');
-  $view->set_arguments(_ticket_allocation_get_skus());
+  //$view->set_arguments(implode('/', _ticket_allocation_get_skus()));
+  //watchdog('ticket_allocation', implode('|', _ticket_allocation_get_skus()));
   return $view->preview();
 }
 
