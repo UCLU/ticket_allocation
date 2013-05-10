@@ -145,9 +145,10 @@ function ticket_allocation_form_validate_ticket($element, &$form_state) {
     $result = $query->execute();
     if (($allocation = $result->fetch()) !== FALSE) {
       $order = commerce_order_load($allocation->order_id);
-      form_error($element, t('The ticket %ticket is already allocated to order @order', array(
+      form_error($element, t('The ticket %ticket is already allocated to order <a href="@url">@order</a>', array(
         '%ticket' => $value,
         '@order' => $order->order_number,
+        '@url' => url('admin/commerce/ticket-allocation/' . $order->order_id),
       )));
     }
   }
