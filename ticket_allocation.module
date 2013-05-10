@@ -246,7 +246,7 @@ function ticket_allocation_load_by_order($order) {
  *   An array of product SKUs.
  */
 function _ticket_allocation_get_skus() {
-  return explode(', ', variable_get('ticket_allocation_products'));
+  return array_unique(explode(', ', variable_get('ticket_allocation_products')));
 }
 
 /**
