@@ -46,6 +46,8 @@ $handler->display->display_options['style_options']['info'] = array(
     'empty_column' => 0,
   ),
   'ticket' => array(
+    'sortable' => 1,
+    'default_sort_order' => 'asc',
     'align' => '',
     'separator' => '',
     'empty_column' => 0,
