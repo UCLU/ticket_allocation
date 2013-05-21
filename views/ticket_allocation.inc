@@ -2,7 +2,7 @@
 $view = new view();
 $view->name = 'ticket_allocation';
 $view->description = '';
-$view->tag = 'default';
+$view->tag = 'ticket_allocation';
 $view->base_table = 'commerce_order';
 $view->human_name = 'Ticket allocation';
 $view->core = 7;
